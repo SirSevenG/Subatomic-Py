@@ -4,7 +4,8 @@ import re
 import slickrpc
 import tkinter as tk
 from tkinter import ttk
-from subprocess import Popen
+import subprocess
+import json
 
 
 # just to set custom timeout
@@ -100,7 +101,7 @@ def refresh_orders_list(rpc_proxy, base, rel, bids_list, asks_list):
 
 def start_subatomic_maker_loop(base, rel):
     command = "./subatomic " + rel + ' "" ' + base
-    subatomic_handle = Popen(command, shell=True)
+    subatomic_handle = subprocess.Popen(command, shell=True)
     return subatomic_handle
 
 
@@ -164,14 +165,14 @@ def fill_daemons_statuses_table(statuses_table, daemons_status_info):
 def fill_bid(order_data, input_amount):
     print("filling bid")
     command = "./subatomic " + order_data["values"][5] + ' "" ' + str(order_data["text"]) + " " + str(input_amount)
-    subatomic_handle = Popen(command, shell=True)
+    subatomic_handle = subprocess.Popen(command, shell=True)
     return subatomic_handle
 
 
 def fill_ask(order_data, input_amount):
     print("filling ask")
     command = "./subatomic " + order_data["values"][6] + ' "" ' + str(order_data["text"]) + " " + str(input_amount)
-    subatomic_handle = Popen(command, shell=True)
+    subatomic_handle = subprocess.Popen(command, shell=True)
     return subatomic_handle
 
 
@@ -222,3 +223,91 @@ def order_fill_popup(selected_order):
     close_button.pack(side="bottom", pady=10)
 
     popup.mainloop()
+
+
+def start_or_stop_selected_daemon(selected_daemon):
+    print(selected_daemon)
+    coin_ticker = selected_daemon["text"]
+    starting_params = ["./komodod"]
+    try:
+        with open("assetchains.json") as assetchains_json:
+            assetchains_data = json.load(assetchains_json)
+    except Exception as e:
+        print(e)
+        print("assetchains.json in same dir is needed!")
+    if selected_daemon["values"][0] == "offline":
+        if coin_ticker == "KMD":
+            starting_params.append("-daemon")
+            subprocess.call(starting_params)
+        elif coin_ticker == "DEX":
+            try:
+                with open('settings.json', 'r') as settings_file:
+                    settings = json.load(settings_file)
+                    starting_params.append("-handle="+settings["handle"])
+                    starting_params.append("-pubkey="+settings["pubkey"])
+                    starting_params.append("-recvZaddr"+settings["z_addy"])
+                    starting_params.append("-ac_name=DEX")
+                    starting_params.append("-dexp2p=2")
+                    starting_params.append("-ac_supply=999999")
+                    starting_params.append("-addnode=136.243.58.134")
+                    starting_params.append("-daemon")
+                    subprocess.call(starting_params)
+            except Exception as e:
+                print(e)
+                popup = tk.Tk()
+                popup.wm_title("Error")
+                save_popup_label = tk.Label(popup, text="Please set your trading data on settings tab")
+                close_button = ttk.Button(popup, text="Close", command=popup.destroy)
+                save_popup_label.pack()
+                close_button.pack()
+                popup.mainloop()
+        else:
+            for assetchain in assetchains_data:
+                if coin_ticker == assetchain["ac_name"]:
+                    for param in assetchain:
+                        if param != "addnode":
+                            starting_params.append("-" + param + "=" + assetchain[param])
+                        # TODO: not for all ACs addnode match with this one - might not work for some daemons...
+                        if "addnode" not in assetchain.keys():
+                            starting_params.append("-addnode=95.213.238.98")
+                        else:
+                            for node in assetchain["addnode"]:
+                                starting_params.append("-addnode="+node)
+            starting_params.append("-daemon")
+            print(starting_params)
+            subprocess.call(starting_params)
+    elif selected_daemon["values"][0] == "online":
+        print("Stopping " + str(coin_ticker))
+        temp_proxy = def_credentials(coin_ticker)
+        temp_proxy.stop()
+
+
+def save_settings_to_file(handle, r_addy, pubkey, z_addy):
+    settings_dict = {}
+    settings_dict["handle"] = handle
+    settings_dict["r_addy"] = r_addy
+    settings_dict["pubkey"] = pubkey
+    settings_dict["z_addy"] = z_addy
+    print("Saving settings")
+    with open('settings.json', 'w+') as settings_file:
+        json.dump(settings_dict, settings_file, ensure_ascii=False, indent=4)
+    popup = tk.Tk()
+    popup.wm_title("Congratulations")
+    save_popup_label = tk.Label(popup, text="settings saved to settings.json file")
+    close_button = ttk.Button(popup, text="Close", command=popup.destroy)
+    save_popup_label.pack()
+    close_button.pack()
+    popup.mainloop()
+
+
+def load_settings_from_file(handle_input_var, receiving_r_address_input_var, pubkey_input_var, receiving_z_address_input_var):
+    try:
+        with open('settings.json', 'r') as settings_file:
+            settings = json.load(settings_file)
+            handle_input_var.set(settings["handle"])
+            receiving_r_address_input_var.set(settings["r_addy"])
+            pubkey_input_var.set(settings["pubkey"])
+            receiving_z_address_input_var.set(settings["z_addy"])
+    except Exception as e:
+        print(e)
+        print("Please set your trading data on settings tab")
